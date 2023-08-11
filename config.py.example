@@ -1,0 +1,6 @@
+print_status_changes = True
+ping_role = False # '<@&123456789012345678>' if you want to ping a role when an app opens otherwise put False
+webhook_url = 'https://discord.com/api/webhooks/.../...'
+apps = ['Sl7m9yyz',  # 1.1.1.1
+        'gdE4pRzI',  # Discord
+        ]
