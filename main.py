@@ -92,7 +92,7 @@ async def process_apps():
                 emoji_status = "🔴" if status == "CLOSED" else "🟠" if status == "FULL" else "🟢"
 
                 console_status = f'[{status}] {app_name} {testflight_url + app_id}'
-                pretty_status = f'{emoji_status} [{app_name}]({testflight_url + app_id})'
+                pretty_status = f'{emoji_status} [{app_name}](<{testflight_url + app_id}>)'
 
                 status_change = await track_status(app_id, status)
                 if status_change is not None:
