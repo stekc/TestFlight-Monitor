@@ -1,5 +1,6 @@
-import asyncio, aiohttp, re, sqlite3
+import asyncio, aiohttp, re, sqlite3, logging
 from bs4 import BeautifulSoup
+from aiohttp import ClientSession, ClientError
 from config import webhook_url, print_status_changes, apps, ping_role
 
 testflight_url = 'https://testflight.apple.com/join/'
@@ -24,31 +25,33 @@ else:
     print('No apps to watch. Exiting...')
     exit()
 
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 async def fetch_data(app_id, session):
     url = testflight_url + app_id
-    async with session.get(url, headers={"Accept-Language": "en-us"}) as response:
-        status_code = response.status
-        if status_code != 200:
-            if status_code == 429:
-                print(f'Rate limited. Sleeping for 5 minutes. Status code: {status_code}')
-                await asyncio.sleep(300)
-            else: 
-                print(f'An error occurred. Status code: {status_code}')
-                await asyncio.sleep(120)
-            return None
+    try:
+        async with session.get(url, headers={"Accept-Language": "en-us"}, timeout=10) as response:
+            response.raise_for_status()
+            return await response.text(encoding='utf-8')
+    except (ClientError, asyncio.TimeoutError) as e:
+        log_level = logging.WARNING if isinstance(e, asyncio.TimeoutError) or getattr(e, 'status', 0) == 429 else logging.ERROR
+        error_type = ("Timeout" if isinstance(e, asyncio.TimeoutError) else 
+                      "Rate limited" if getattr(e, 'status', 0) == 429 else 
+                      "Error")
+        log_message = f"{error_type} fetching {url}. {str(e)}"
+        logging.log(log_level, log_message)
+        await asyncio.sleep(300 if getattr(e, 'status', 0) == 429 else 120)
+        return None
 
-        content = await response.text()
-        return content
-    
 async def send_discord_webhook(message):
-    async with aiohttp.ClientSession() as session:
-        payload = {
-            'content': message
-        }
-        async with session.post(webhook_url, json=payload) as response:
-            status_code = response.status
-            if not status_code == 204:
-                print(f"Failed to send webhook. Status code: {status_code}")
+    async with ClientSession() as session:
+        payload = {'content': message}
+        try:
+            async with session.post(webhook_url, json=payload) as response:
+                response.raise_for_status()
+        except ClientError as e:
+            logging.error(f"Failed to send webhook. Error: {str(e)}")
 
 async def track_status(id, new_status):
     cursor.execute('SELECT status FROM status_changes WHERE id = ?', (id,))
@@ -70,13 +73,9 @@ async def track_status(id, new_status):
         return None
 
 async def process_apps():
-    async with aiohttp.ClientSession() as session:
+    async with ClientSession() as session:
         while True:
-            tasks = []
-
-            for app_id in apps:
-                tasks.append(fetch_data(app_id, session))
-
+            tasks = [fetch_data(app_id, session) for app_id in apps]
             results = await asyncio.gather(*tasks)
 
             for app_id, result in zip(apps, results):
@@ -97,11 +96,10 @@ async def process_apps():
                 status_change = await track_status(app_id, status)
                 if status_change is not None:
                     await send_discord_webhook(f'{pretty_status} {ping_role if ping_role and status == "OPEN" else ""}')
-                if print_status_changes: print(console_status)
+                if print_status_changes:
+                    logging.info(console_status)
 
             await asyncio.sleep(60)
 
-
 if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(process_apps())
+    asyncio.run(process_apps())

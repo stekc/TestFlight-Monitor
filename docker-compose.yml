@@ -1,0 +1,11 @@
+services:
+  TestFlight:
+    container_name: TestFlight
+    image: python:3.11-alpine
+    working_dir: /opt/tfm
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./:/opt/tfm
+    command: sh -c "apk --no-cache --update add build-base && pip install --no-cache-dir -r requirements.txt && python main.py"
+    restart: unless-stopped
